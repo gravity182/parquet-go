@@ -1,0 +1,5 @@
+# Generated Apache Thrift Go code
+parquet/internal/thrift/thriftgen/** linguist-generated=true
+
+# Vendored Parquet metadata Thrift spec
+thrift/parquet.thrift linguist-vendored=true
