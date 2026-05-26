@@ -99,9 +99,6 @@ func parseColumnChunkData(columnChunk *ColumnChunk, column ColumnDescriptor, r i
 		}
 		fmt.Printf("Definition levels: %v\n", definitionLevels)
 
-		fmt.Printf("Collected values: %d\n", pageNumValues)
-		fmt.Printf("Remaining bytes: %d\n", bodyReader.Len())
-
 		collectedNumValues += int64(pageNumValues)
 
 		// todo: read correctly according to the definition & repetition levels
@@ -123,6 +120,9 @@ func parseColumnChunkData(columnChunk *ColumnChunk, column ColumnDescriptor, r i
 			fmt.Printf("%v ", value)
 		}
 		fmt.Println()
+
+		fmt.Printf("Collected values: %d\n", pageNumValues)
+		fmt.Printf("Remaining bytes: %d\n", bodyReader.Len())
 	}
 	return nil
 }
@@ -132,23 +132,23 @@ func parseNextValue(r *bytes.Reader, physicalType PhysicalType) (any, error) {
 	case TypeInt32:
 		var v int32
 		if err := binary.Read(r, binary.LittleEndian, &v); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("parse int32: %w", err)
 		}
 		return v, nil
 	case TypeInt64:
 		var v int64
 		if err := binary.Read(r, binary.LittleEndian, &v); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("parse int64: %w", err)
 		}
 		return v, nil
 	case TypeByteArray:
 		var length uint32
 		if err := binary.Read(r, binary.LittleEndian, &length); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("parse byte array length: %w", err)
 		}
 		buf := make([]byte, length)
 		if _, err := io.ReadFull(r, buf); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("parse byte array: %w", err)
 		}
 		return string(buf), nil
 	default:
