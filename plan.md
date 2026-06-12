@@ -16,6 +16,8 @@ Data parsing:
 
 Repeated, optional columns, nested columns.
 
+Decoder Options.
+
 ## Phase 3
 
 Dictionary page.

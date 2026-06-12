@@ -10,13 +10,16 @@ type Reader struct {
 	r      io.ReaderAt
 	size   int64
 	closer io.Closer
+
+	meta *Metadata
 }
 
-func NewReader(r io.ReaderAt, size int64, closer io.Closer) *Reader {
+func NewReader(r io.ReaderAt, size int64, closer io.Closer, meta *Metadata) *Reader {
 	return &Reader{
 		r:      r,
 		size:   size,
 		closer: closer,
+		meta:   meta,
 	}
 }
 
@@ -30,6 +33,7 @@ func OpenFile(path string) (*Reader, error) {
 		_ = f.Close()
 		return nil, fmt.Errorf("stat a Parquet file '%q': %w", path, err)
 	}
+	meta := 
 	return NewReader(f, info.Size(), f), nil
 }
 

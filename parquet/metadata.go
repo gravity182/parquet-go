@@ -9,6 +9,10 @@ import (
 	"github.com/gravity182/parq/parquet/internal/thrift/thriftgen"
 )
 
+const (
+	MAGIC = "PAR1"
+)
+
 func (r *Reader) Metadata() (*Metadata, error) {
 	// header (4 bytes) + footer (8 bytes) at min required
 	if r.size < 12 {
@@ -100,7 +104,7 @@ func dfs(
 		case RepetitionTypeOptional:
 			defLevel++
 		case RepetitionTypeRequired:
-			// nothing
+			// no incr by design
 		}
 	}
 
