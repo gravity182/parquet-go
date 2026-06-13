@@ -13,25 +13,19 @@ import (
 )
 
 type Scanner struct {
-	r              io.ReaderAt
-	meta           *Metadata
-	rowGroupCursor int
+	r    io.ReaderAt
+	meta *Metadata
 }
 
 func NewScanner(r io.ReaderAt, meta *Metadata) *Scanner {
 	return &Scanner{
-		r:              r,
-		meta:           meta,
-		rowGroupCursor: 0,
+		r:    r,
+		meta: meta,
 	}
 }
 
 func (r *Reader) Scanner() (*Scanner, error) {
-	meta, err := r.Metadata()
-	if err != nil {
-		return nil, fmt.Errorf("get metadata: %w", err)
-	}
-	return NewScanner(r.r, meta), nil
+	return NewScanner(r.r, r.meta), nil
 }
 
 func (s *Scanner) Rows() error {
@@ -72,59 +66,70 @@ func parseColumnChunkData(columnChunk *ColumnChunk, column ColumnDescriptor, r i
 	for collectedNumValues < totalNumValues {
 		header := thriftgen.NewPageHeader()
 		if err := thrift.DeserializeFromStreamTransport(context.Background(), transport, header); err != nil {
-			return fmt.Errorf("read header")
+			return fmt.Errorf("read thrift page header: %w", err)
 		}
 		if header.Type != thriftgen.PageType_DATA_PAGE {
 			return fmt.Errorf("unsupported page type: %q", header.Type)
 		}
 
-		pageNumValues := int(header.DataPageHeader.NumValues)
-		fmt.Printf("Current page num values: %v\n", pageNumValues)
-
 		body := make([]byte, header.CompressedPageSize)
 		if _, err := io.ReadFull(transport, body); err != nil {
-			return fmt.Errorf("unexpected eof when reading page body")
+			return fmt.Errorf("unexpected eof when reading page body: %w", err)
 		}
 		bodyReader := bytes.NewReader(body)
 
-		repetitionLevels, err := decodeLevels(bodyReader, column.MaxRepetitionLevel, pageNumValues)
+		pageNumValues, err := parsePage(bodyReader, header, column)
 		if err != nil {
-			return fmt.Errorf("decode repetition levels: %w", err)
+			return fmt.Errorf("parse page: %w", err)
 		}
-		fmt.Printf("Repetition levels: %v\n", repetitionLevels)
-
-		definitionLevels, err := decodeLevels(bodyReader, column.MaxDefinitionLevel, pageNumValues)
-		if err != nil {
-			return fmt.Errorf("decode repetition levels: %w", err)
-		}
-		fmt.Printf("Definition levels: %v\n", definitionLevels)
 
 		collectedNumValues += int64(pageNumValues)
-
-		// todo: read correctly according to the definition & repetition levels
-		// simple guards
-		for _, defLevel := range definitionLevels {
-			if defLevel != uint32(column.MaxDefinitionLevel) {
-				return fmt.Errorf("I can only read max definition levels now :(")
-			}
-		}
-		if len(repetitionLevels) != 0 {
-			return fmt.Errorf("Repetition levels not supported yet :(")
-		}
-		fmt.Printf("values: ")
-		for range pageNumValues {
-			value, err := parseNextValue(bodyReader, column.Type)
-			if err != nil {
-				return fmt.Errorf("read value: %w", err)
-			}
-			fmt.Printf("%v ", value)
-		}
-		fmt.Println()
-
 		fmt.Printf("Collected values: %d\n", pageNumValues)
-		fmt.Printf("Remaining bytes: %d\n", bodyReader.Len())
+
 	}
 	return nil
+}
+
+func parsePage(bodyReader *bytes.Reader, header *thriftgen.PageHeader, column ColumnDescriptor) (int, error) {
+	pageNumValues := int(header.DataPageHeader.NumValues)
+	fmt.Printf("Current page num values: %v\n", pageNumValues)
+
+	repetitionLevels, err := decodeLevels(bodyReader, column.MaxRepetitionLevel, pageNumValues)
+	if err != nil {
+		return 0, fmt.Errorf("decode repetition levels: %w", err)
+	}
+	fmt.Printf("Repetition levels: %v\n", repetitionLevels)
+
+	definitionLevels, err := decodeLevels(bodyReader, column.MaxDefinitionLevel, pageNumValues)
+	if err != nil {
+		return 0, fmt.Errorf("decode definition levels: %w", err)
+	}
+	fmt.Printf("Definition levels: %v\n", definitionLevels)
+
+	// todo: read correctly according to the definition & repetition levels
+	// simple guards
+	for _, defLevel := range definitionLevels {
+		if defLevel != uint32(column.MaxDefinitionLevel) {
+			return 0, fmt.Errorf("I can only read max definition levels now :(")
+		}
+	}
+	if len(repetitionLevels) != 0 {
+		return 0, fmt.Errorf("Repetition levels not supported yet :(")
+	}
+	fmt.Printf("values: ")
+	for range pageNumValues {
+		value, err := parseNextValue(bodyReader, column.Type)
+		if err != nil {
+			return 0, fmt.Errorf("read value: %w", err)
+		}
+		fmt.Printf("%v ", value)
+	}
+	fmt.Println()
+
+	if bodyReader.Len() != 0 {
+		panic("page body was not fully consumed")
+	}
+	return pageNumValues, nil
 }
 
 func parseNextValue(r *bytes.Reader, physicalType PhysicalType) (any, error) {

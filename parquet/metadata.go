@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"io"
 
 	"github.com/gravity182/parq/parquet/internal/thrift"
 	"github.com/gravity182/parq/parquet/internal/thrift/thriftgen"
@@ -13,21 +14,21 @@ const (
 	MAGIC = "PAR1"
 )
 
-func (r *Reader) Metadata() (*Metadata, error) {
+func ParseMetadata(r io.ReaderAt, size int64) (*Metadata, error) {
 	// header (4 bytes) + footer (8 bytes) at min required
-	if r.size < 12 {
+	if size < 12 {
 		return nil, fmt.Errorf("size is too small")
 	}
 
 	headerBuf := make([]byte, 4)
-	if _, err := r.r.ReadAt(headerBuf, 0); err != nil {
+	if _, err := r.ReadAt(headerBuf, 0); err != nil {
 		return nil, fmt.Errorf("read a header: %w", err)
 	}
 	if string(headerBuf) != MAGIC {
 		return nil, fmt.Errorf("header magic mismatch: got %q, want %q", headerBuf, MAGIC)
 	}
 	footerBuf := make([]byte, 8)
-	if _, err := r.r.ReadAt(footerBuf, r.size-8); err != nil {
+	if _, err := r.ReadAt(footerBuf, size-8); err != nil {
 		return nil, fmt.Errorf("read a footer: %w", err)
 	}
 	if string(footerBuf[4:8]) != MAGIC {
@@ -35,18 +36,18 @@ func (r *Reader) Metadata() (*Metadata, error) {
 	}
 
 	metadataLen := int64(binary.LittleEndian.Uint32(footerBuf[:4]))
-	if metadataLen > r.size-12 {
+	if metadataLen > size-12 {
 		return nil, fmt.Errorf("invalid metadata length: %d", metadataLen)
 	}
-	metadataOffset := r.size - 8 - metadataLen
+	metadataOffset := size - 8 - metadataLen
 	metadataBuf := make([]byte, metadataLen)
-	if _, err := r.r.ReadAt(metadataBuf, metadataOffset); err != nil {
-		return nil, fmt.Errorf("read a metadata: %w", err)
+	if _, err := r.ReadAt(metadataBuf, metadataOffset); err != nil {
+		return nil, fmt.Errorf("read metadata buffer: %w", err)
 	}
 
 	meta := thriftgen.NewFileMetaData()
 	if err := thrift.DeserializeFromBytes(context.Background(), metadataBuf, meta); err != nil {
-		return nil, fmt.Errorf("parse metadata: %w", err)
+		return nil, fmt.Errorf("deserialize thrift metadata: %w", err)
 	}
 
 	schema, err := parseSchema(meta.Schema)
@@ -65,14 +66,6 @@ func (r *Reader) Metadata() (*Metadata, error) {
 		Schema:    schema,
 		RowGroups: rowGroups,
 	}, nil
-}
-
-func (r *Reader) Schema() (*Schema, error) {
-	meta, err := r.Metadata()
-	if err != nil {
-		return nil, err
-	}
-	return meta.Schema, nil
 }
 
 func dfs(

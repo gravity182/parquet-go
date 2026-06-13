@@ -14,9 +14,9 @@ Data parsing:
 
 ## Phase 2
 
-Repeated, optional columns, nested columns.
+Column reader API.
 
-Decoder Options.
+Repeated, optional columns, nested columns.
 
 ## Phase 3
 
@@ -26,12 +26,12 @@ Index page, but deprecated and rare.
 
 ## Phase 4
 
-Compression.
+Support all compression codecs.
 
 ## Phase 5
 
-Encodings
+Support all encodings.
 
-## Filters
+## Phase 6
 
 Filter out pages based on the column chunk-level statistics, or page-level column index + offset index.
