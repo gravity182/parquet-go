@@ -263,8 +263,8 @@ func printSchemaNode(w io.Writer, node *parquet.SchemaNode, depth int) {
 		if node.RepetitionType != nil {
 			fmt.Fprintf(w, " %s", *node.RepetitionType)
 		}
-		if node.Type != nil {
-			fmt.Fprintf(w, " %s", *node.Type)
+		if node.PhysicalType != nil {
+			fmt.Fprintf(w, " %s", *node.PhysicalType)
 		}
 		fmt.Fprintln(w)
 		return

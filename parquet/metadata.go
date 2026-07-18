@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"slices"
 
 	"github.com/gravity182/parq/parquet/internal/thrift"
 	"github.com/gravity182/parq/parquet/internal/thrift/thriftgen"
@@ -102,8 +103,9 @@ func dfs(
 	}
 
 	next := idx + 1
-	if node.Type != nil {
-		*leaves = append(*leaves, newColumnDescriptor(node, defLevel, repLevel, path, level))
+	if node.PhysicalType != nil {
+		columnIndex := len(*leaves)
+		*leaves = append(*leaves, newColumnDescriptor(node, defLevel, repLevel, path, level, columnIndex))
 	} else {
 		for i := range elem.GetNumChildren() {
 			child, childNext, err := dfs(next, level+1, defLevel, repLevel, path, leaves, schema)
@@ -124,13 +126,15 @@ func newColumnDescriptor(
 	repLevel int,
 	path []string,
 	level int,
+	columnIndex int,
 ) ColumnDescriptor {
 	pathInSchema := make([]string, level)
 	copy(pathInSchema, path[:level])
 
 	return ColumnDescriptor{
 		Name:               node.Name,
-		Type:               *node.Type,
+		Type:               *node.PhysicalType,
+		Index:              columnIndex,
 		MaxDefinitionLevel: defLevel,
 		MaxRepetitionLevel: repLevel,
 		PathInSchema:       pathInSchema,
@@ -261,9 +265,42 @@ type Schema struct {
 	Columns []ColumnDescriptor
 }
 
+func (s *Schema) ResolveNodeByPath(path []string) (*SchemaNode, error) {
+	if len(path) == 0 {
+		return nil, fmt.Errorf("Empty path: %s", path)
+	}
+	node := resolveDfs(0, s.Root, path)
+	if node == nil {
+		return nil, fmt.Errorf("Node not found by path %s", path)
+	}
+	return node, nil
+}
+
+func resolveDfs(i int, root *SchemaNode, path []string) *SchemaNode {
+	if i == len(path) {
+		return root
+	}
+	nextColumn := path[i]
+	for _, childSchemaNode := range root.Children {
+		if childSchemaNode.Name == nextColumn {
+			return resolveDfs(i+1, childSchemaNode, path)
+		}
+	}
+	return nil
+}
+
+func (s *Schema) ResolveLeafColumn(path []string) (ColumnDescriptor, error) {
+	for _, column := range s.Columns {
+		if slices.Equal(column.PathInSchema, path) {
+			return column, nil
+		}
+	}
+	return ColumnDescriptor{}, fmt.Errorf("Column not found by path %s", path)
+}
+
 type SchemaNode struct {
 	Name           string
-	Type           *PhysicalType
+	PhysicalType   *PhysicalType
 	RepetitionType *RepetitionType
 	Children       []*SchemaNode
 }
@@ -271,6 +308,7 @@ type SchemaNode struct {
 type ColumnDescriptor struct {
 	Name               string
 	Type               PhysicalType
+	Index              int
 	MaxDefinitionLevel int
 	MaxRepetitionLevel int
 	PathInSchema       []string
@@ -316,7 +354,7 @@ func newSchemaNode(elem *thriftgen.SchemaElement) (*SchemaNode, error) {
 		if err != nil {
 			return nil, fmt.Errorf("map physical type for schema element %q: %w", elem.GetName(), err)
 		}
-		node.Type = &physicalType
+		node.PhysicalType = &physicalType
 
 		if elem.GetNumChildren() > 0 {
 			return nil, fmt.Errorf("Leaf nodes shouldn't have any children, but got %d for node %q", elem.GetNumChildren(), elem.GetName())

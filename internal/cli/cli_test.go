@@ -72,7 +72,7 @@ func TestPrintMetadata(t *testing.T) {
 					{
 						Name:           "id",
 						RepetitionType: &repetitionType,
-						Type:           &physicalType,
+						PhysicalType:   &physicalType,
 					},
 				},
 			},
